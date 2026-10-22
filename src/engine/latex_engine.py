@@ -1,15 +1,19 @@
-# src/latex_engine.py
+# src/engine/latex_engine.py
 import os
 import re
+from typing import Optional
+
 import cv2
 import numpy as np
-from PIL import Image
-from typing import Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from PIL import Image
+
+from src.core.models import Diagram, EngineResult
 
 load_dotenv()
+
 
 class LatexConverterEngine:
     def __init__(self, api_key: Optional[str] = None):
@@ -26,11 +30,11 @@ class LatexConverterEngine:
         # 1. Extract ```mermaid ... ``` blocks
         def mermaid_replacer(match):
             code = match.group(1).strip()
-            diagrams.append({
-                "type": "mermaid",
-                "label": f"FIG 0{len(diagrams) + 1}",
-                "content": code
-            })
+            diagrams.append(Diagram(
+                type="mermaid",
+                label=f"FIG 0{len(diagrams) + 1}",
+                content=code
+            ))
             return ""
 
         cleaned = re.sub(r"```mermaid\s*([\s\S]+?)```", mermaid_replacer, raw_text)
@@ -43,11 +47,11 @@ class LatexConverterEngine:
                 if len(bbox) == 4 and preprocessor is not None:
                     b64_img = preprocessor.extract_clean_diagram(cv_frame, bbox)
                     if b64_img:
-                        diagrams.append({
-                            "type": "image",
-                            "label": f"FIG 0{len(diagrams) + 1}",
-                            "content": b64_img
-                        })
+                        diagrams.append(Diagram(
+                            type="image",
+                            label=f"FIG 0{len(diagrams) + 1}",
+                            content=b64_img
+                        ))
             except Exception as e:
                 print(f"[WARN] Diagram crop failed: {e}")
             return ""
@@ -56,7 +60,7 @@ class LatexConverterEngine:
         cleaned = re.sub(r"```(?:latex|tex|markdown)?\n?(.*?)\n?```", r"\1", cleaned, flags=re.DOTALL)
         return cleaned.strip(), diagrams
 
-    def convert(self, cv_frame: np.ndarray, retry: bool = False, preprocessor=None) -> dict:
+    def convert(self, cv_frame: np.ndarray, retry: bool = False, preprocessor=None) -> EngineResult:
         pil_img = Image.fromarray(cv2.cvtColor(cv_frame, cv2.COLOR_BGR2RGB))
 
         prompt = (
@@ -93,14 +97,14 @@ class LatexConverterEngine:
                     config=types.GenerateContentConfig(temperature=temp)
                 )
                 clean_text, diagrams = self._extract_diagrams(response.text, cv_frame, preprocessor)
-                return {
-                    "status": "success",
-                    "latex": clean_text,
-                    "diagrams": diagrams,
-                    "error": None
-                }
+                return EngineResult(
+                    status="success",
+                    latex=clean_text,
+                    diagrams=diagrams,
+                    error=None
+                )
             except Exception as e:
                 print(f"[WARN] {model_name} failed: {e}")
                 last_err = str(e)
 
-        return {"status": "error", "latex": None, "diagrams": [], "error": last_err}
+        return EngineResult(status="error", latex=None, diagrams=[], error=last_err)

@@ -1,8 +1,8 @@
 # main_track1.py
 import cv2
 import argparse
-from src.whiteboard_cv import WhiteboardPreprocessor
-from src.latex_engine import LatexConverterEngine
+from src.engine.whiteboard_cv import WhiteboardPreprocessor
+from src.engine.latex_engine import LatexConverterEngine
 
 
 def main():
@@ -12,7 +12,7 @@ def main():
     parser.add_argument(
         "--image",
         type=str,
-        default="test_images/board1.jpg",
+        default="test_images/board1.jpeg",
         help="Path to whiteboard image",
     )
     parser.add_argument(
@@ -54,16 +54,16 @@ def main():
     engine = LatexConverterEngine()
     result = engine.convert(cleaned_board)
 
-    if result["status"] == "success":
+    if result.status == "success":
         print("\n================ GENERATED LATEX ================")
-        print(result["latex"])
+        print(result.latex)
         print("=================================================\n")
 
         with open("output_notes.tex", "w", encoding="utf-8") as f:
-            f.write(result["latex"])
+            f.write(result.latex)
         print("[SUCCESS] Saved raw LaTeX to 'output_notes.tex'")
     else:
-        print(f"[ERROR] Conversion failed: {result['error']}")
+        print(f"[ERROR] Conversion failed: {result.error}")
 
 
 if __name__ == "__main__":

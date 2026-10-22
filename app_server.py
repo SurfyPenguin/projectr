@@ -9,15 +9,13 @@ import qrcode
 from datetime import datetime
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO
-from src.whiteboard_cv import WhiteboardPreprocessor
-from src.latex_engine import LatexConverterEngine
+from src.engine.pipeline import WhiteboardEngine
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "whiteboard-secret-key"
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-preprocessor = WhiteboardPreprocessor()
-engine = LatexConverterEngine()
+engine = WhiteboardEngine()
 
 LECTURE_SLIDES = []
 
@@ -128,23 +126,14 @@ def trigger_scan():
         socketio.emit("scan_status", {"status": "error", "message": err_msg})
         return jsonify({"status": "error", "message": err_msg}), 400
 
-    # Only apply 4-corner perspective warp if explicitly checked, otherwise just clean glare on full image
-    if use_warp:
-        preprocessor.board_corners = preprocessor._load_corners()
-    else:
-        preprocessor.board_corners = None
+    # Warp is opt-in and owned by the engine (guardrail: never apply stale calibration).
+    result = engine.process(frame, retry=is_retry, use_warp=use_warp)
+    diagrams = [d.to_dict() for d in result.diagrams]
 
-    cleaned_board = preprocessor.process_whiteboard(
-        frame, out_width=frame.shape[1], out_height=frame.shape[0]
-    )
-
-    # Pass preprocessor so engine can crop any @@DIAGRAM@@ bounding boxes!
-    result = engine.convert(cleaned_board, retry=is_retry, preprocessor=preprocessor)
-
-    if result["status"] == "success":
+    if result.status == "success":
         if is_retry:
-            LECTURE_SLIDES[replace_index]["latex"] = result["latex"]
-            LECTURE_SLIDES[replace_index]["diagrams"] = result.get("diagrams", [])
+            LECTURE_SLIDES[replace_index]["latex"] = result.latex
+            LECTURE_SLIDES[replace_index]["diagrams"] = diagrams
             LECTURE_SLIDES[replace_index]["image_path"] = image_path
             LECTURE_SLIDES[replace_index]["timestamp"] = datetime.now().strftime("%I:%M %p")
             updated_slide = LECTURE_SLIDES[replace_index]
@@ -159,16 +148,16 @@ def trigger_scan():
                 "slide_num": len(LECTURE_SLIDES) + 1,
                 "timestamp": datetime.now().strftime("%I:%M %p"),
                 "image_path": image_path,
-                "latex": result["latex"],
-                "diagrams": result.get("diagrams", [])
+                "latex": result.latex,
+                "diagrams": diagrams
             }
             LECTURE_SLIDES.append(slide_data)
 
             socketio.emit("new_latex_slide", slide_data)
             return jsonify({"status": "success", "slide": slide_data, "replaced": False})
     else:
-        socketio.emit("scan_status", {"status": "error", "message": result["error"]})
-        return jsonify({"status": "error", "message": result["error"]}), 500
+        socketio.emit("scan_status", {"status": "error", "message": result.error})
+        return jsonify({"status": "error", "message": result.error}), 500
 
 
 if __name__ == "__main__":

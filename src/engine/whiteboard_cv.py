@@ -1,7 +1,9 @@
-# src/whiteboard_cv.py
-import cv2
+# src/engine/whiteboard_cv.py
+import base64
 import json
 import os
+
+import cv2
 import numpy as np
 
 
@@ -16,6 +18,10 @@ class WhiteboardPreprocessor:
                 data = json.load(f)
                 return np.array(data["corners"], dtype="float32")
         return None
+
+    def set_warp(self, enabled: bool) -> None:
+        """Opt in to the stored homography; new frames are never warped implicitly."""
+        self.board_corners = self._load_corners() if enabled else None
 
     def _order_points(self, pts: np.ndarray) -> np.ndarray:
         """Automatically orders 4 clicked points into: [top-left, top-right, bottom-right, bottom-left]."""
@@ -81,35 +87,6 @@ class WhiteboardPreprocessor:
         print(f"[INFO] Saved whiteboard calibration to {self.config_path}")
         return ordered
     
-    def extract_clean_diagram(self, frame: np.ndarray, bbox: list) -> str:
-        """
-        Crops [ymin, xmin, ymax, xmax] (normalized 0-1000 coordinates),
-        cleans the grey whiteboard into a crisp white textbook figure, and returns base64 PNG.
-        """
-        import base64
-        h, w = frame.shape[:2]
-        ymin, xmin, ymax, xmax = bbox
-
-        pad_y, pad_x = int(h * 0.02), int(w * 0.02)
-        y1 = max(0, int((ymin / 1000.0) * h) - pad_y)
-        x1 = max(0, int((xmin / 1000.0) * w) - pad_x)
-        y2 = min(h, int((ymax / 1000.0) * h) + pad_y)
-        x2 = min(w, int((xmax / 1000.0) * w) + pad_x)
-
-        crop = frame[y1:y2, x1:x2]
-        if crop.size == 0:
-            return ""
-
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-        clean_sketch = cv2.adaptiveThreshold(
-            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 25, 10
-        )
-
-        _, buffer = cv2.imencode(".png", clean_sketch)
-        b64_str = base64.b64encode(buffer).decode("utf-8")
-        return f"data:image/png;base64,{b64_str}"
-
     def process_whiteboard(
         self, frame: np.ndarray, out_width=1920, out_height=1080
     ) -> np.ndarray:
@@ -151,8 +128,6 @@ class WhiteboardPreprocessor:
         Crops [ymin, xmin, ymax, xmax] (normalized 0-1000 coordinates from Gemini),
         cleans whiteboard background into pure white, and returns a base64 PNG string.
         """
-        import base64
-
         h, w = frame.shape[:2]
         ymin, xmin, ymax, xmax = bbox
 
