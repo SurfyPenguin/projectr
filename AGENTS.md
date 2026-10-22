@@ -4,12 +4,16 @@
 An embedded Edge-AI classroom system that captures handwritten math, text, tables, and diagrams from a physical whiteboard, converts them into structured Markdown + LaTeX, projects them live over HDMI in a minimal presentation interface, and syncs slides in real-time to student smartphones via a LAN QR code.
 
 ## Tech Stack
-- **Computer Vision (`src/whiteboard_cv.py`):** OpenCV (`cv2`), NumPy, PIL. Handles 4-point perspective homography, LAB color-space morphological glare removal, and adaptive Gaussian thresholding for diagram crops.
-- **Inference Engine (`src/latex_engine.py`):** 3-Tier Cascade:
+- **Computer Vision (`src/engine/whiteboard_cv.py`):** OpenCV (`cv2`), NumPy, PIL. Handles 4-point perspective homography, LAB color-space morphological glare removal, and adaptive Gaussian thresholding for diagram crops.
+- **Inference Engine (`src/engine/latex_engine.py`):** 3-Tier Cascade (tier 3 pending):
   1. Primary Cloud: `gemini-2.5-flash` (`google-genai` SDK)
   2. Secondary Cloud Failover (503 protection): `gemini-2.5-flash-lite`
   3. Offline LAN Compute Node: Ollama (`qwen2.5vl:7b`) via HTTP REST API
-- **Backend & Real-Time Sync (`app_server.py`):** Flask + Flask-SocketIO + `qrcode`.
+- **Engine Facade (`src/engine/pipeline.py`):** `WhiteboardEngine.process(frame, retry, use_warp)` — image in, `EngineResult` out.
+- **Core (`src/core/`):** `SlideDeck` (replaces the global `LECTURE_SLIDES`), `ScanService` orchestrator, domain models, and ports (`FrameSource`, `OutputSink`, `EnginePort`).
+- **Inputs (`src/inputs/`):** `FileImageSource`, `UploadSource`, `LiveCameraSource`; triggers (`HttpTrigger`, `KeyboardTrigger`, `GpioTrigger` stub) call `ScanService`, never the engine.
+- **Outputs (`src/outputs/`):** `SocketIOSink` and `ConsoleSink`.
+- **Backend & Real-Time Sync (`app_server.py`):** Flask + Flask-SocketIO + `qrcode`; thin `create_app()` wiring and routes only.
 - **Frontend (`templates/projector.html`, `templates/student_notes.html`):** Vanilla JS, Socket.IO, `marked.js` (Markdown), `KaTeX` (Math), `mermaid.js` (Topological diagrams).
 
 ## Critical Engineering Guardrails (DO NOT VIOLATE)

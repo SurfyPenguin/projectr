@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 from src.core.errors import FrameSourceError
 from src.core.models import EngineResult, Frame, Slide
