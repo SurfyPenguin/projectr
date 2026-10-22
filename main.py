@@ -1,13 +1,18 @@
-# main_track1.py
-import cv2
+# main.py
+"""Headless composition root: the same core pipeline without Flask or sockets."""
+
 import argparse
-from src.engine.whiteboard_cv import WhiteboardPreprocessor
-from src.engine.latex_engine import LatexConverterEngine
+
+from src.core.scan_service import ScanService
+from src.core.slide_deck import SlideDeck
+from src.engine.pipeline import WhiteboardEngine
+from src.inputs.file_source import FileImageSource
+from src.outputs.console_sink import ConsoleSink
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Track 1: Whiteboard Vision & LaTeX Engine"
+        description="Whiteboard image -> Markdown + LaTeX (no server)"
     )
     parser.add_argument(
         "--image",
@@ -16,54 +21,77 @@ def main():
         help="Path to whiteboard image",
     )
     parser.add_argument(
-        "--recalibrate", action="store_true", help="Force 4-corner mouse calibration"
+        "--use-warp",
+        action="store_true",
+        help="Apply the saved 4-corner homography (opt-in for a fixed camera mount)",
+    )
+    parser.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="Click the 4 board corners before scanning (implies --use-warp)",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Save debug_flattened_cleaned.jpg and show the cleaned frame",
+    )
+    parser.add_argument(
+        "--save-tex",
+        default="output_notes.tex",
+        help="Where to write the raw LaTeX (empty string disables)",
     )
     args = parser.parse_args()
 
-    # 1. Load Image
-    frame = cv2.imread(args.image)
-    if frame is None:
-        print(
-            f"[ERROR] Could not load image at '{args.image}'. Put a whiteboard photo there first!"
-        )
-        return
+    engine = WhiteboardEngine()
 
-    # 2. Initialize Preprocessor & Calibrate Corners if needed
-    preprocessor = WhiteboardPreprocessor()
-    if preprocessor.board_corners is None or args.recalibrate:
-        preprocessor.calibrate_interactively(frame)
+    if args.recalibrate:
+        import cv2
 
-    # 3. Flatten Perspective & Remove Glare
-    print("[INFO] Flattening perspective and removing whiteboard glare...")
-    cleaned_board = preprocessor.process_whiteboard(frame)
+        frame = cv2.imread(args.image)
+        if frame is None:
+            raise SystemExit(f"[ERROR] Could not load image at '{args.image}'")
+        engine.preprocessor.calibrate_interactively(frame)
+        args.use_warp = True
 
-    # Save debug output so you can show "Before vs After" in your project report!
-    cv2.imwrite("test_images/debug_flattened_cleaned.jpg", cleaned_board)
-    print(
-        "[INFO] Saved preprocessed board to 'test_images/debug_flattened_cleaned.jpg'"
+    if args.preview:
+        _preview(engine, args.image, use_warp=args.use_warp)
+
+    deck = SlideDeck()
+    service = ScanService(deck, engine)
+    service.add_sink(ConsoleSink())
+
+    outcome = service.capture(
+        FileImageSource(args.image), use_warp=args.use_warp
     )
+    if outcome.status != "success" or outcome.slide is None:
+        raise SystemExit(f"[ERROR] Conversion failed: {outcome.error}")
 
-    # Show side-by-side preview (press any key to continue to OCR)
-    preview = cv2.resize(cleaned_board, (960, 540))
-    cv2.imshow("Cleaned Whiteboard (Press ANY KEY to convert to LaTeX)", preview)
+    print("\n================ GENERATED LATEX ================")
+    print(outcome.slide.latex)
+    print("=================================================\n")
+
+    if args.save_tex:
+        with open(args.save_tex, "w", encoding="utf-8") as f:
+            f.write(outcome.slide.latex)
+        print(f"[SUCCESS] Saved raw LaTeX to '{args.save_tex}'")
+
+
+def _preview(engine: WhiteboardEngine, image_path: str, *, use_warp: bool) -> None:
+    """Dev-only before/after view; the debug_* file is ignored by the scanner."""
+    import cv2
+
+    frame = cv2.imread(image_path)
+    if frame is None:
+        return
+    engine.preprocessor.set_warp(use_warp)
+    cleaned = engine.preprocessor.process_whiteboard(
+        frame, out_width=frame.shape[1], out_height=frame.shape[0]
+    )
+    cv2.imwrite("test_images/debug_flattened_cleaned.jpg", cleaned)
+    preview = cv2.resize(cleaned, (960, 540))
+    cv2.imshow("Cleaned Whiteboard (press any key)", preview)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-
-    # 4. Run LaTeX Conversion
-    print("[INFO] Sending cleaned whiteboard to LaTeX Engine...")
-    engine = LatexConverterEngine()
-    result = engine.convert(cleaned_board)
-
-    if result.status == "success":
-        print("\n================ GENERATED LATEX ================")
-        print(result.latex)
-        print("=================================================\n")
-
-        with open("output_notes.tex", "w", encoding="utf-8") as f:
-            f.write(result.latex)
-        print("[SUCCESS] Saved raw LaTeX to 'output_notes.tex'")
-    else:
-        print(f"[ERROR] Conversion failed: {result.error}")
 
 
 if __name__ == "__main__":
