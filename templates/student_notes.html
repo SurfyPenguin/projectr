@@ -1,0 +1,571 @@
+<!-- templates/student_notes.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>slides</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+      :root {
+        --bg-base: #09090b;
+        --bg-surface: #121214;
+        --bg-slide: #ffffff;
+        --text-slide: #09090b;
+        --border: #27272a;
+        --text-primary: #fafafa;
+        --text-muted: #71717a;
+        --mono:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+          Consolas, monospace;
+        --sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        border-radius: 0;
+      }
+
+      body {
+        background-color: var(--bg-base);
+        color: var(--text-primary);
+        font-family: var(--sans);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      /* Minimal Cobalt-style top utility bar */
+      .toolbar {
+        height: 44px;
+        background: var(--bg-base);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 16px;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .btn {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        border: 1px solid var(--border);
+        padding: 6px 12px;
+        font-family: var(--mono);
+        font-size: 12px;
+        cursor: pointer;
+        transition:
+          background 0.1s,
+          border-color 0.1s;
+      }
+
+      .btn:hover {
+        background: #1f1f23;
+        border-color: #52525b;
+      }
+
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      /* Google Slides Workspace Layout */
+      .workspace {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 200px 1fr;
+        overflow: hidden;
+      }
+
+      /* Left Filmstrip Sidebar */
+      .filmstrip {
+        background: var(--bg-base);
+        border-right: 1px solid var(--border);
+        overflow-y: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .thumb-item {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 6px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .thumb-index {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-muted);
+        padding-top: 2px;
+      }
+
+      .thumb-box {
+        aspect-ratio: 16 / 9;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        padding: 6px;
+        font-size: 6px;
+        color: var(--text-muted);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .thumb-item.active .thumb-box {
+        border-color: var(--text-primary);
+        background: #18181b;
+        color: var(--text-primary);
+      }
+
+      .thumb-item.active .thumb-index {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      /* Main Slide Stage */
+      .stage {
+        background: #0d0d0f;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        overflow-y: auto;
+      }
+
+      /* Inside <style> of student_notes.html and projector.html */
+      .slide-content-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr; /* Full width when no diagrams exist */
+        overflow: hidden;
+      }
+
+      /* Automatically triggered when slide.diagrams.length > 0 */
+      .slide-content-grid.has-diagrams {
+        grid-template-columns: 60% 40%;
+      }
+
+      .diagram-panel {
+        display: none;
+        border-left: 1px solid #e4e4e7; /* Use var(--border) in projector.html */
+        padding: 28px 32px;
+        background: #fafafa; /* Use #0c0c0e in projector.html */
+        overflow-y: auto;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .slide-content-grid.has-diagrams .diagram-panel {
+        display: flex;
+      }
+
+      .fig-box {
+        border: 1px solid #d4d4d8; /* Use var(--border) in projector.html */
+        background: #ffffff;
+        padding: 12px;
+      }
+
+      .fig-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: #71717a;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #f4f4f5;
+        padding-bottom: 4px;
+      }
+
+      .fig-box img,
+      .fig-box svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      /* Clean borders for Markdown tables (like the Block No / Location table) */
+      table {
+        border-collapse: collapse;
+        margin: 16px 0;
+        font-size: 1.05rem;
+      }
+      th,
+      td {
+        border: 1px solid #71717a;
+        padding: 8px 18px;
+        text-align: left;
+      }
+
+      /* Adaptive 60/40 Split when a slide has diagrams */
+      .slide-main-area {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr;
+        overflow: hidden;
+      }
+      .slide-main-area.has-diagrams {
+        grid-template-columns: 62% 38%;
+      }
+      .diagram-sidebar {
+        display: none;
+        border-left: 1px solid var(--border);
+        padding: 24px;
+        overflow-y: auto;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .slide-main-area.has-diagrams .diagram-sidebar {
+        display: flex;
+      }
+      .fig-card {
+        border: 1px solid var(--border);
+        padding: 10px;
+        background: #ffffff;
+        color: #09090b;
+      }
+      .fig-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: #71717a;
+        margin-bottom: 6px;
+      }
+      .fig-card img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .slide-canvas {
+        width: 100%;
+        max-width: 960px;
+        min-height: 540px;
+        background: var(--bg-slide);
+        color: var(--text-slide);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .slide-header,
+      .slide-footer {
+        height: 36px;
+        padding: 0 28px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: #71717a;
+      }
+
+      .slide-header {
+        border-bottom: 1px solid #e4e4e7;
+      }
+      .slide-footer {
+        border-top: 1px solid #e4e4e7;
+      }
+
+      /* Inside templates/student_notes.html (and #latex-content in projector.html) */
+      .slide-body,
+      #latex-content {
+        flex: 1;
+        padding: 40px 56px;
+        /* Use KaTeX_Main so English prose matches the LaTeX math font exactly */
+        font-family:
+          "KaTeX_Main", "Latin Modern Roman", "Computer Modern", Georgia, serif;
+        font-size: 1.25rem;
+        line-height: 1.75;
+        letter-spacing: 0.01em;
+        overflow-x: auto;
+      }
+
+      /* Fix KaTeX's default 1.21em oversized scaling so inline math sits flush with text */
+      .katex {
+        font-size: 1.02em !important;
+      }
+
+      /* Give display equations breathing room */
+      .katex-display {
+        margin: 1.1em 0 !important;
+      }
+
+      .slide-body p {
+        margin-bottom: 12px;
+      }
+      .slide-body ul,
+      .slide-body ol {
+        margin-left: 24px;
+        margin-bottom: 12px;
+      }
+
+      /* Print View: Render all slides cleanly for PDF export */
+      #print-container {
+        display: none;
+      }
+
+      @media (max-width: 768px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+        .filmstrip {
+          display: none;
+        }
+        .stage {
+          padding: 12px;
+        }
+        .slide-body {
+          padding: 20px;
+          font-size: 1rem;
+        }
+      }
+
+      @media print {
+        body {
+          background: #fff;
+          height: auto;
+          overflow: visible;
+        }
+        .toolbar,
+        .workspace {
+          display: none !important;
+        }
+        #print-container {
+          display: block !important;
+        }
+        .print-slide {
+          page-break-after: always;
+          border: 1px solid #d4d4d8;
+          min-height: 90vh;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          color: #000;
+          background: #fff;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <button class="btn" id="prev-btn" onclick="stepSlide(-1)">prev</button>
+        <span
+          id="nav-indicator"
+          style="padding: 0 8px; color: var(--text-muted)"
+          >00 / 00</span
+        >
+        <button class="btn" id="next-btn" onclick="stepSlide(1)">next</button>
+      </div>
+      <div class="toolbar-group">
+        <button class="btn" onclick="copyCurrentTex()">copy .tex</button>
+        <button class="btn" onclick="window.print()">export pdf</button>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <div class="filmstrip" id="filmstrip"></div>
+
+      <div class="stage">
+        <div class="slide-canvas">
+          <div class="slide-header">
+            <span id="header-index">SLIDE 00</span>
+            <span id="header-time">--:--</span>
+          </div>
+          <div class="slide-main-area" id="slide-main-area">
+            <div class="slide-body" id="active-slide-body">
+              <span
+                style="
+                  color: #71717a;
+                  font-family: var(--mono);
+                  font-size: 13px;
+                "
+                >no slides captured</span
+              >
+            </div>
+            <div class="diagram-sidebar" id="active-diagram-sidebar"></div>
+          </div>
+          <div class="slide-footer">
+            <span></span>
+            <span id="footer-counter">00 / 00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="print-container"></div>
+
+    <script>
+        const socket = io();
+        let slides = {{ slides | tojson | safe }};
+        let currentIndex = slides.length > 0 ? slides.length - 1 : 0;
+
+        function pad(n) {
+            return String(n).padStart(2, '0');
+        }
+
+        function renderMarkdownWithMath(element, rawText) {
+            const mathBlocks = [];
+            let protectedText = rawText
+                .replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
+                    mathBlocks.push(match);
+                    return `@@MATH_BLOCK_${mathBlocks.length - 1}@@`;
+                })
+                .replace(/\$([^\$\n]+?)\$/g, (match) => {
+                    mathBlocks.push(match);
+                    return `@@MATH_BLOCK_${mathBlocks.length - 1}@@`;
+                });
+
+            protectedText = protectedText
+                .replace(/\\textbf\{([^}]+)\}/g, '**$1**')
+                .replace(/\\textit\{([^}]+)\}/g, '*$1*')
+                .replace(/\\begin\{(?:itemize|enumerate)\}/g, '')
+                .replace(/\\end\{(?:itemize|enumerate)\}/g, '')
+                .replace(/\\item\[([^\]]+)\]/g, '\n- **$1** ')
+                .replace(/\\item\s+/g, '\n- ');
+
+            let html = marked.parse(protectedText);
+            html = html.replace(/@@MATH_BLOCK_(\d+)@@/g, (_, index) => mathBlocks[Number(index)]);
+            element.innerHTML = html;
+
+            renderMathInElement(element, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '\\[', right: '\\]', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false}
+                ],
+                throwOnError: false
+            });
+        }
+
+        function syncUI() {
+            const total = slides.length;
+            const filmstrip = document.getElementById("filmstrip");
+            const printContainer = document.getElementById("print-container");
+            filmstrip.innerHTML = "";
+            printContainer.innerHTML = "";
+
+            if (total === 0) {
+                document.getElementById("prev-btn").disabled = true;
+                document.getElementById("next-btn").disabled = true;
+                return;
+            }
+
+            function renderDiagrams(slide) {
+          const mainArea = document.getElementById("slide-main-area");
+          const sidebar = document.getElementById("active-diagram-sidebar");
+          const diagrams = slide.diagrams || [];
+
+          if (diagrams.length === 0) {
+              mainArea.classList.remove("has-diagrams");
+              sidebar.innerHTML = "";
+              return;
+          }
+
+          mainArea.classList.add("has-diagrams");
+          sidebar.innerHTML = diagrams.map(d => {
+              if (d.type === "image") {
+                  return `<div class="fig-card">
+                              <div class="fig-label">${d.label}</div>
+                              <img src="${d.content}" alt="${d.label}">
+                          </div>`;
+              } else {
+                  return `<div class="fig-card">
+                              <div class="fig-label">${d.label}</div>
+                              <pre class="mermaid">${d.content}</pre>
+                          </div>`;
+              }
+          }).join("");
+      }
+
+            slides.forEach((s, idx) => {
+                // 1. Build filmstrip thumbnail
+                const item = document.createElement("div");
+                item.className = "thumb-item" + (idx === currentIndex ? " active" : "");
+                item.onclick = () => { currentIndex = idx; syncUI(); };
+                item.innerHTML = `
+                    <div class="thumb-index">${pad(idx + 1)}</div>
+                    <div class="thumb-box">
+                        <div style="font-family:var(--mono); font-size:8px;">${s.latex.substring(0, 45)}...</div>
+                        <div style="font-family:var(--mono); font-size:7px; text-align:right;">${s.timestamp}</div>
+                    </div>
+                `;
+                filmstrip.appendChild(item);
+
+                // 2. Build print view slide
+                const pSlide = document.createElement("div");
+                pSlide.className = "print-slide";
+                pSlide.innerHTML = `
+                    <div class="slide-header"><span>SLIDE ${pad(idx + 1)}</span><span>${s.timestamp}</span></div>
+                    <div class="slide-body print-body"></div>
+                    <div class="slide-footer"><span></span><span>${pad(idx + 1)} / ${pad(total)}</span></div>
+                `;
+                printContainer.appendChild(pSlide);
+                renderMarkdownWithMath(pSlide.querySelector(".print-body"), s.latex);
+            });
+
+            // 3. Render active slide on main stage
+            const active = slides[currentIndex];
+            const indicator = `${pad(currentIndex + 1)} / ${pad(total)}`;
+            document.getElementById("nav-indicator").innerText = indicator;
+            document.getElementById("header-index").innerText = `SLIDE ${pad(currentIndex + 1)}`;
+            document.getElementById("header-time").innerText = active.timestamp;
+            document.getElementById("footer-counter").innerText = indicator;
+
+            renderMarkdownWithMath(document.getElementById("active-slide-body"), active.latex);
+
+            document.getElementById("prev-btn").disabled = currentIndex === 0;
+            document.getElementById("next-btn").disabled = currentIndex === total - 1;
+        }
+
+        function stepSlide(delta) {
+            const next = currentIndex + delta;
+            if (next >= 0 && next < slides.length) {
+                currentIndex = next;
+                syncUI();
+            }
+        }
+
+        function copyCurrentTex() {
+            if (!slides.length) return;
+            navigator.clipboard.writeText(slides[currentIndex].latex);
+        }
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowLeft") stepSlide(-1);
+            if (e.key === "ArrowRight") stepSlide(1);
+        });
+
+        socket.on("new_latex_slide", (slide) => {
+            slides.push(slide);
+            currentIndex = slides.length - 1;
+            syncUI();
+        });
+
+        syncUI();
+    </script>
+  </body>
+</html>

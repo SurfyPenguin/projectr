@@ -1,0 +1,569 @@
+<!-- templates/projector.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>projector</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <style>
+      :root {
+        --bg-base: #09090b;
+        --bg-surface: #121214;
+        --border: #27272a;
+        --text-primary: #fafafa;
+        --text-muted: #71717a;
+        --mono:
+          "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+          Consolas, monospace;
+        --sans: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        border-radius: 0;
+      }
+
+      body {
+        background-color: var(--bg-base);
+        color: var(--text-primary);
+        font-family: var(--sans);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .toolbar {
+        height: 44px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 20px;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .btn {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+        border: 1px solid var(--border);
+        padding: 6px 14px;
+        font-family: var(--mono);
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .btn:hover {
+        background: #1f1f23;
+        border-color: #52525b;
+      }
+
+      .btn-primary {
+        background: var(--text-primary);
+        color: var(--bg-base);
+        border-color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      .btn-primary:hover {
+        background: #d4d4d8;
+      }
+
+      main {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 220px;
+        overflow: hidden;
+      }
+
+      .slide-stage {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border-right: 1px solid var(--border);
+        background: var(--bg-base);
+        overflow: hidden;
+      }
+
+      .slide-header,
+      .slide-footer {
+        height: 40px;
+        padding: 0 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .slide-header {
+        border-bottom: 1px solid var(--border);
+      }
+      .slide-footer {
+        border-top: 1px solid var(--border);
+      }
+
+      /* Inside <style> of student_notes.html and projector.html */
+      .slide-content-grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr; /* Full width when no diagrams exist */
+        overflow: hidden;
+      }
+
+      /* Automatically triggered when slide.diagrams.length > 0 */
+      .slide-content-grid.has-diagrams {
+        grid-template-columns: 60% 40%;
+      }
+
+      .diagram-panel {
+        display: none;
+        border-left: 1px solid #e4e4e7; /* Use var(--border) in projector.html */
+        padding: 28px 32px;
+        background: #fafafa; /* Use #0c0c0e in projector.html */
+        overflow-y: auto;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .slide-content-grid.has-diagrams .diagram-panel {
+        display: flex;
+      }
+
+      .fig-box {
+        border: 1px solid #d4d4d8; /* Use var(--border) in projector.html */
+        background: #ffffff;
+        padding: 12px;
+      }
+
+      .fig-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: #71717a;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #f4f4f5;
+        padding-bottom: 4px;
+      }
+
+      .fig-box img,
+      .fig-box svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      /* Clean borders for Markdown tables (like the Block No / Location table) */
+      table {
+        border-collapse: collapse;
+        margin: 16px 0;
+        font-size: 1.05rem;
+      }
+      th,
+      td {
+        border: 1px solid #71717a;
+        padding: 8px 18px;
+        text-align: left;
+      }
+
+      /* Adaptive 60/40 Split when a slide has diagrams */
+      .slide-main-area {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr;
+        overflow: hidden;
+      }
+      .slide-main-area.has-diagrams {
+        grid-template-columns: 62% 38%;
+      }
+      .diagram-sidebar {
+        display: none;
+        border-left: 1px solid var(--border);
+        padding: 24px;
+        overflow-y: auto;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .slide-main-area.has-diagrams .diagram-sidebar {
+        display: flex;
+      }
+      .fig-card {
+        border: 1px solid var(--border);
+        padding: 10px;
+        background: #ffffff;
+        color: #09090b;
+      }
+      .fig-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: #71717a;
+        margin-bottom: 6px;
+      }
+      .fig-card img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      #latex-content {
+        flex: 1;
+        padding: 48px 64px;
+        overflow-y: auto;
+        font-size: 1.75rem;
+        line-height: 1.65;
+      }
+
+      #latex-content {
+        flex: 1;
+        padding: 48px 64px;
+        overflow-y: auto;
+        /* Unify prose with KaTeX's exact mathematical serif font */
+        font-family: "KaTeX_Main", "Latin Modern Roman", Georgia, serif;
+        font-size: 1.85rem;
+        line-height: 1.7;
+        color: #e4e4e7; /* Soft off-white reduces projector glare on dark backgrounds */
+        /* Critical for white-on-black serif text: prevents thick/bloated strokes */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      #latex-content p {
+        margin-bottom: 20px;
+      }
+
+      /* Keep bold labels crisp, not muddy, on dark backgrounds */
+      #latex-content b,
+      #latex-content strong {
+        font-family: "KaTeX_Main", Georgia, serif;
+        font-weight: 700;
+        color: #fafafa;
+      }
+
+      /* Match KaTeX inline size to surrounding KaTeX_Main prose */
+      .katex {
+        font-size: 1.02em !important;
+        color: #fafafa;
+      }
+
+      .katex-display {
+        margin: 1.1em 0 !important;
+      }
+
+      aside {
+        background: var(--bg-base);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text-muted);
+      }
+
+      .qr-frame {
+        border: 1px solid var(--border);
+        padding: 10px;
+        background: var(--bg-surface);
+      }
+
+      .qr-frame img {
+        width: 100%;
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      .qr-url {
+        font-size: 9.5px;
+        letter-spacing: -0.02em;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .qr-frame {
+        border: 1px solid var(--border);
+        padding: 10px;
+        background: var(--bg-surface);
+      }
+
+      .qr-frame img {
+        width: 100%;
+        display: block;
+        margin-bottom: 8px;
+      }
+
+      ::-webkit-scrollbar {
+        width: 6px;
+        background: #09090b;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #27272a;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <button class="btn" onclick="stepSlide(-1)">prev</button>
+        <span id="nav-counter" style="color: var(--text-muted); padding: 0 6px"
+          >00 / 00</span
+        >
+        <button class="btn" onclick="stepSlide(1)">next</button>
+      </div>
+      <div class="toolbar-group">
+        <span id="status-text" style="color: var(--text-muted)">idle</span>
+        <select
+          id="image-select"
+          class="btn"
+          onfocus="refreshImageList()"
+          style="outline: none"
+        >
+          {% for img in images %}
+          <option value="{{ img }}">{{ img.split('/')[-1] }}</option>
+          {% endfor %}
+        </select>
+        <button
+          class="btn"
+          id="recapture-btn"
+          onclick="triggerRecapture()"
+          disabled
+        >
+          recapture
+        </button>
+        <button class="btn btn-primary" onclick="triggerManualScan()">
+          capture
+        </button>
+      </div>
+    </div>
+
+    <main>
+      <div class="slide-stage">
+        <div class="slide-header">
+          <span id="header-slide-num">SLIDE 00</span>
+          <span id="header-timestamp">--:--</span>
+        </div>
+
+        <div class="slide-main-area" id="slide-main-area">
+          <div id="latex-content">
+            <span
+              style="
+                font-family: var(--mono);
+                font-size: 13px;
+                color: var(--text-muted);
+              "
+              >ready</span
+            >
+          </div>
+          <div class="diagram-sidebar" id="active-diagram-sidebar"></div>
+        </div>
+
+        <div class="slide-footer">
+          <span></span>
+          <span id="footer-slide-num">00 / 00</span>
+        </div>
+      </div>
+
+      <aside>
+        <div class="qr-frame">
+          <img src="data:image/png;base64,{{ qr_b64 }}" alt="qr" />
+          <div style="word-break: break-all; color: var(--text-primary)">
+            {{ student_url }}
+          </div>
+        </div>
+        <div>
+          <div>keys: left / right</div>
+        </div>
+      </aside>
+    </main>
+
+    <script>
+        const socket = io();
+        let slides = {{ slides | tojson | safe }};
+        let currentIndex = slides.length > 0 ? slides.length - 1 : 0;
+
+        function pad(n) {
+            return String(n).padStart(2, '0');
+        }
+
+        function renderMarkdownWithMath(element, rawText) {
+            const mathBlocks = [];
+            let protectedText = rawText
+                .replace(/\$\$([\s\S]+?)\$\$/g, (match) => {
+                    mathBlocks.push(match);
+                    return `@@MATH_BLOCK_${mathBlocks.length - 1}@@`;
+                })
+                .replace(/\$([^\$\n]+?)\$/g, (match) => {
+                    mathBlocks.push(match);
+                    return `@@MATH_BLOCK_${mathBlocks.length - 1}@@`;
+                });
+
+            protectedText = protectedText
+                .replace(/\\textbf\{([^}]+)\}/g, '**$1**')
+                .replace(/\\textit\{([^}]+)\}/g, '*$1*')
+                .replace(/\\begin\{(?:itemize|enumerate)\}/g, '')
+                .replace(/\\end\{(?:itemize|enumerate)\}/g, '')
+                .replace(/\\item\[([^\]]+)\]/g, '\n- **$1** ')
+                .replace(/\\item\s+/g, '\n- ');
+
+            let html = marked.parse(protectedText);
+            html = html.replace(/@@MATH_BLOCK_(\d+)@@/g, (_, index) => mathBlocks[Number(index)]);
+            element.innerHTML = html;
+
+            renderMathInElement(element, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '\\[', right: '\\]', display: true},
+                    {left: '$', right: '$', display: false},
+                    {left: '\\(', right: '\\)', display: false}
+                ],
+                throwOnError: false
+            });
+        }
+
+        function syncSlide() {
+            const total = slides.length;
+            const recaptureBtn = document.getElementById("recapture-btn");
+            if (total === 0) {
+                recaptureBtn.disabled = true;
+                return;
+            }
+            recaptureBtn.disabled = false;
+
+            const slide = slides[currentIndex];
+            const indicator = `${pad(currentIndex + 1)} / ${pad(total)}`;
+
+            document.getElementById("nav-counter").innerText = indicator;
+            document.getElementById("header-slide-num").innerText = `SLIDE ${pad(currentIndex + 1)}`;
+            document.getElementById("header-timestamp").innerText = slide.timestamp;
+            document.getElementById("footer-slide-num").innerText = indicator;
+
+            renderMarkdownWithMath(document.getElementById("latex-content"), slide.latex);
+        }
+
+        socket.on("scan_status", (data) => {
+            const statusText = document.getElementById("status-text");
+            if (data.status === "scanning") {
+                statusText.innerText = data.mode === "recapturing" ? "re-evaluating..." : "processing...";
+                statusText.style.color = "#fafafa";
+            } else if (data.status === "error") {
+                statusText.innerText = "error: " + data.message;
+                statusText.style.color = "#ef4444";
+            }
+        });
+
+        socket.on("update_latex_slide", (payload) => {
+            const statusText = document.getElementById("status-text");
+            statusText.innerText = "updated";
+            statusText.style.color = "#71717a";
+            slides[payload.index] = payload.slide;
+            currentIndex = payload.index;
+            syncSlide();
+        });
+
+        async function refreshImageList() {
+          const select = document.getElementById("image-select");
+          const currentVal = select.value;
+          const res = await fetch("/api/images");
+          const data = await res.json();
+          select.innerHTML = data.images.map(img =>
+              `<option value="${img}">${img.split('/').pop()}</option>`
+          ).join("");
+          if (data.images.includes(currentVal)) {
+              select.value = currentVal;
+          }
+      }
+
+      socket.on("scan_status", (data) => {
+          const statusText = document.getElementById("status-text");
+          if (data.status === "scanning") {
+              statusText.innerText = data.mode || "processing...";
+              statusText.style.color = "#fafafa";
+          } else if (data.status === "error") {
+              statusText.innerText = "error: " + data.message;
+              statusText.style.color = "#ef4444";
+          }
+      });
+
+      function triggerManualScan() {
+          const selectedImg = document.getElementById("image-select").value;
+          fetch("/api/scan", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({ image_path: selectedImg })
+          });
+      }
+
+      function triggerRecapture() {
+          if (slides.length === 0) return;
+          const selectedImg = document.getElementById("image-select").value;
+          fetch("/api/scan", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({
+                  replace_index: currentIndex,
+                  image_path: selectedImg
+              })
+          });
+      }
+
+        // Add 'r' shortcut to your existing keydown listener:
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowLeft") stepSlide(-1);
+            if (e.key === "ArrowRight") stepSlide(1);
+            if (e.key === "r" || e.key === "R") triggerRecapture();
+        });
+        function stepSlide(delta) {
+            const next = currentIndex + delta;
+            if (next >= 0 && next < slides.length) {
+                currentIndex = next;
+                syncSlide();
+            }
+        }
+
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowLeft") stepSlide(-1);
+            if (e.key === "ArrowRight") stepSlide(1);
+        });
+
+        socket.on("scan_status", (data) => {
+            const statusText = document.getElementById("status-text");
+            if (data.status === "scanning") {
+                statusText.innerText = "processing...";
+                statusText.style.color = "#fafafa";
+            } else if (data.status === "error") {
+                statusText.innerText = "error: " + data.message;
+                statusText.style.color = "#ef4444";
+            }
+        });
+
+        socket.on("new_latex_slide", (slide) => {
+            const statusText = document.getElementById("status-text");
+            statusText.innerText = "synced";
+            statusText.style.color = "#71717a";
+            slides.push(slide);
+            currentIndex = slides.length - 1;
+            syncSlide();
+        });
+
+        syncSlide();
+    </script>
+  </body>
+</html>
