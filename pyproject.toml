@@ -14,3 +14,8 @@ dependencies = [
     "python-dotenv>=1.2.4",
     "qrcode[pil]>=8.2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
