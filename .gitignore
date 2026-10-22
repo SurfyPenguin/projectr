@@ -1,0 +1,46 @@
+# ── Secrets ──────────────────────────────────────────────
+# Gemini API keys loaded via python-dotenv in app_server.py / src/latex_engine.py
+.env
+.env.*
+!.env.example
+
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── Tooling caches ───────────────────────────────────────
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Generated engine output ──────────────────────────────
+# main.py writes the raw LaTeX transcription here
+output_notes.tex
+
+# Debug artifacts written by the CV pipeline (main.py / whiteboard_cv.py).
+# Guardrail: the file scanner also filters these at runtime — see AGENTS.md #3.
+test_images/debug_*
+debug_*.jpg
+debug_*.jpeg
+debug_*.png
+
+# ── Machine-specific calibration ─────────────────────────
+# 4-corner homography bound to one physical camera mount.
+# Guardrail: never apply blindly to new test images — see AGENTS.md #2.
+calibration_config.json
+
+# ── OS / editor noise ────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*~
