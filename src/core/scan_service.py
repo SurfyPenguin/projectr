@@ -40,10 +40,8 @@ class ScanService:
         use_warp: bool,
     ) -> ScanOutcome:
         label = os.path.basename(source.source_id)
-        self._status(
-            "scanning",
-            mode=f"{'recapturing' if retry else 'scanning'} ({label})",
-        )
+        mode = f"recapturing ({label})" if retry else f"scanning {label}"
+        self._status("scanning", mode=mode)
 
         try:
             frame = source.get_frame()

@@ -53,8 +53,11 @@ def create_app(
     app.config["SECRET_KEY"] = "whiteboard-secret-key"
     socketio = SocketIO(app, cors_allowed_origins="*")
 
-    deck = deck or SlideDeck()
-    scan_service = ScanService(deck, engine or WhiteboardEngine())
+    if deck is None:
+        deck = SlideDeck()
+    if engine is None:
+        engine = WhiteboardEngine()
+    scan_service = ScanService(deck, engine)
     scan_service.add_sink(SocketIOSink(socketio))
     http_trigger = HttpTrigger(scan_service, directory=source_directory)
 

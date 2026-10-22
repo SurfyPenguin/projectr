@@ -78,7 +78,7 @@ def test_capture_publishes_new_slide_and_stores_it():
     assert sink.statuses[0] == {
         "status": "scanning",
         "message": "",
-        "mode": "scanning (fake.jpeg)",
+        "mode": "scanning fake.jpeg",
     }
 
 
